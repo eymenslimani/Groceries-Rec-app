@@ -1,81 +1,80 @@
-# streamlit_app.py
-
 import streamlit as st
 import pandas as pd
-import numpy as np
-from mlxtend.preprocessing import TransactionEncoder
-from mlxtend.frequent_patterns import apriori, association_rules
-from collections import Counter
-import matplotlib.pyplot as plt
-import seaborn as sns
 import networkx as nx
+import matplotlib.pyplot as plt
+from mlxtend.frequent_patterns import apriori, association_rules
+from mlxtend.preprocessing import TransactionEncoder
+from collections import Counter
 
-st.set_page_config(page_title="Groceries Recommendation System", layout="wide")
-st.title("Groceries Recommendation System")      # Sidebar for inputs
-st.sidebar.header("Configuration")
-uploaded_file = st.sidebar.file_uploader("Upload Transaction Data (CSV)", type=["csv"])
-min_support = st.sidebar.slider("Minimum Support", 0.0001, 0.05, 0.001, step=0.0001)
-min_confidence = st.sidebar.slider("Minimum Confidence", 0.1, 1.0, 0.7, step=0.1)
-algorithm = st.sidebar.selectbox("Select Algorithm", ["Apriori", "FPGrowth"]) if uploaded_file:
-    # Read CSV
-    data = pd.read_csv(uploaded_file)
-    st.write("### Uploaded Data", data.head())
+# Title and Info
+st.title("🛒 Grocery Recommendation App")
+st.info("An app to explore grocery recommendation using association rule mining.")
 
-    # Preprocess data
-    data.dropna(inplace=True)
-    transactions = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: list(x)).tolist()
+# Load and Display Data
+with st.expander("Dataset"):
+    df = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
+    st.write("**Raw Data**")
+    st.write(df)
 
-    # One-hot encode transactions
+    # Preprocess Data
+    transaction_data = df.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: list(x)).tolist()
     te = TransactionEncoder()
-    te_array = te.fit(transactions).transform(transactions)
+    te_array = te.fit(transaction_data).transform(transaction_data)
     transaction_df = pd.DataFrame(te_array, columns=te.columns_)
-    st.write("### Encoded Transactions", transaction_df.head())
-else:
-    st.warning("Please upload a transaction dataset.") 
-    if uploaded_file:
-    if algorithm == "Apriori":
-        frequent_itemsets = apriori(transaction_df, min_support=min_support, use_colnames=True, max_len=10)
-    else:  # FPGrowth
-        from mlxtend.frequent_patterns import fpgrowth
-        frequent_itemsets = fpgrowth(transaction_df, min_support=min_support, use_colnames=True, max_len=10)
+    st.write("**Processed Transactions**")
+    st.write(transaction_df)
 
-    st.write("### Frequent Itemsets", frequent_itemsets)
+# Association Rule Mining
+min_support = st.sidebar.slider("Minimum Support", 0.0001, 0.05, 0.01)
+min_confidence = st.sidebar.slider("Minimum Confidence", 0.1, 1.0, 0.7)
 
-    # Generate association rules
-    rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
-    st.write("### Association Rules", rules) 
-    if uploaded_file and not rules.empty:
-    st.header("Make Predictions")
-    antecedent = st.text_input("Enter antecedent items (comma-separated):").split(",")
+frequent_itemsets = apriori(transaction_df, min_support=min_support, use_colnames=True)
+rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
 
-    if antecedent:
-        antecedent_set = set(antecedent)
-        matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent_set))]
-        predictions = matching_rules.sort_values(by="confidence", ascending=False).head(3)
-        st.write("### Predicted Consequents", predictions[['consequents', 'confidence']]) 
-        def plot_item_frequency(transactions):
-    item_counts = Counter(item for sublist in transactions for item in sublist)
-    most_common_items = item_counts.most_common(20)
+# Display Rules
+with st.expander("Association Rules"):
+    st.write("**Frequent Itemsets**")
+    st.write(frequent_itemsets)
+    st.write("**Association Rules**")
+    st.write(rules)
 
-    items, counts = zip(*most_common_items)
-    plt.figure(figsize=(10, 5))
-    plt.bar(items, counts, color=plt.cm.Pastel2(range(len(items))))
-    plt.title("Top 20 Frequent Items")
-    plt.xticks(rotation=90)
-    st.pyplot(plt)
+# Input for Predictions
+with st.sidebar:
+    st.header("Input for Recommendations")
+    antecedent = st.multiselect("Select items", transaction_df.columns.tolist())
+    top_n = st.slider("Top N Recommendations", 1, 10, 3)
 
-plot_item_frequency(transactions)  if not rules.empty:
-    top10_rules = rules.nlargest(10, "confidence")
-    plt.figure(figsize=(10, 6))
-    sns.heatmap(top10_rules[["support", "confidence", "lift"]], annot=True, cmap="coolwarm", fmt=".2f")
-    st.pyplot(plt)  if not rules.empty:
+def make_prediction(antecedent, rules, top_n):
+    matching_rules = rules[rules['antecedents'].apply(lambda x: set(antecedent).issubset(x))]
+    top_rules = matching_rules.sort_values(by='confidence', ascending=False).head(top_n)
+    predictions = top_rules['consequents'].tolist()
+    return [', '.join(list(pred)) for pred in predictions]
+
+if antecedent:
+    recommendations = make_prediction(antecedent, rules, top_n)
+    st.sidebar.write("**Recommendations**")
+    st.sidebar.write(recommendations)
+
+# Visualization
+with st.expander("Visualizations"):
+    st.write("**Graph of Rules**")
     G = nx.DiGraph()
-    for _, rule in top10_rules.iterrows():
-        for antecedent in rule["antecedents"]:
-            for consequent in rule["consequents"]:
-                G.add_edge(antecedent, consequent, weight=rule["lift"])
-
-    plt.figure(figsize=(8, 6))
-    pos = nx.spring_layout(G)
-    nx.draw(G, pos, with_labels=True, node_size=1500, node_color="lightblue", font_size=10)
+    for _, rule in rules.head(10).iterrows():
+        for antecedent in rule['antecedents']:
+            for consequent in rule['consequents']:
+                G.add_edge(antecedent, consequent, weight=rule['lift'])
+    pos = nx.spring_layout(G, seed=42)
+    plt.figure(figsize=(10, 8))
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', font_size=10, node_size=2000, 
+            edge_color='gray', width=2)
     st.pyplot(plt)
+
+    st.write("**Heatmap of Rules (Support vs Lift)**")
+    if not rules.empty:
+        plt.figure(figsize=(10, 6))
+        heatmap_data = rules[['support', 'confidence', 'lift']].head(10)
+        st.write(heatmap_data)  # Display DataFrame for clarity
+        plt.barh(range(len(heatmap_data)), heatmap_data['lift'], color='skyblue')
+        plt.xlabel('Lift')
+        plt.title('Lift for Top Rules')
+        st.pyplot(plt)
