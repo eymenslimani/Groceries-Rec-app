@@ -32,25 +32,26 @@ def load_data():
     te_array = te.fit(transactions).transform(transactions)
     transaction_df = pd.DataFrame(te_array, columns=te.columns_)
     
-    return transaction_df, te.columns_
+    return transaction_df, te.columns_, len(transaction_df)
 
 # Load data
-transaction_df, unique_items = load_data()
+transaction_df, unique_items, num_transactions = load_data()
 
 # Generate rules
 @st.cache_data
-def generate_rules(transaction_df):
+def generate_rules(transaction_df, num_transactions):
     # Apriori algorithm
     frequent_itemsets = apriori(transaction_df, min_support=0.001, use_colnames=True, low_memory=True, max_len=10)
-    rules = association_rules(frequent_itemsets, metric='confidence', min_threshold=0.5)
+    rules = association_rules(frequent_itemsets, metric='confidence', min_threshold=0.5, num_itemsets=num_transactions)
     
     # FP-Growth algorithm
     freq_itemsets_fp = fpgrowth(transaction_df, min_support=0.001, use_colnames=True, max_len=10)
-    rules_fp = association_rules(freq_itemsets_fp, metric='confidence', min_threshold=0.5)
+    rules_fp = association_rules(freq_itemsets_fp, metric='confidence', min_threshold=0.5, num_itemsets=num_transactions)
     
     return rules, rules_fp
 
-rules, rules_fp = generate_rules(transaction_df)
+# Generate rules
+rules, rules_fp = generate_rules(transaction_df, num_transactions)
 
 # Prediction function
 def make_prediction(antecedent, rules, top_n=5):
