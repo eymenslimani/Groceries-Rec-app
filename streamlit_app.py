@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from mlxtend.frequent_patterns import apriori, association_rules, fpgrowth
 from mlxtend.preprocessing import TransactionEncoder
-from collections import Counter
 
 # Page Configuration
 st.set_page_config(page_title="Grocery Recommendation App", page_icon="🛒", layout="wide")
@@ -129,12 +128,13 @@ def main():
 
     # Top Rules Heatmap
     st.subheader("Top 10 Association Rules Heatmap")
-    top10_rules = current_rules.nlargest(10, 'confidence')
-    plt.figure(figsize=(10, 6))
-    sns.heatmap(top10_rules[['support', 'confidence', 'lift']],
-                 annot=True, cmap='coolwarm', fmt='.2f')
-    plt.title("Top 10 Rules: Support, Confidence, Lift")
-    st.pyplot(plt)
+    if not current_rules.empty:  # Check if current_rules has data before plotting
+        top10_rules = current_rules.nlargest(10, 'confidence')
+        plt.figure(figsize=(10, 6))
+        sns.heatmap(top10_rules[['support', 'confidence', 'lift']],
+                     annot=True, cmap='coolwarm', fmt='.2f')
+        plt.title("Top 10 Rules: Support, Confidence, Lift")
+        st.pyplot(plt)
 
 if __name__ == "__main__":
     main()
