@@ -1,13 +1,13 @@
-# 📦 Streamlit App Starter Kit 
+# Groceries-Rec-app
 ```
 ⬆️ (Replace above with your app's name)
 ```
 
-Description of the app ...
+An app based on an unsupervised model working on recommending grocery associated products 
 
 ## Demo App
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://app-starter-kit.streamlit.app/)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://Groceries-Rec-app.streamlit.app/)
 
 ## GitHub Codespaces
 
