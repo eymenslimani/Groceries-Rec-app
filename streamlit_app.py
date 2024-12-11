@@ -33,10 +33,10 @@ def load_data():
     te_array = te.fit(transactions).transform(transactions)
     transaction_df = pd.DataFrame(te_array, columns=te.columns_)
 
-    return transaction_df, te.columns_
+    return transaction_df, te.columns_, transactions
 
 # Load data
-transaction_df, unique_items = load_data()
+transaction_df, unique_items, transactions = load_data()
 
 # Generate rules with caching
 @st.cache_data
@@ -52,8 +52,11 @@ def generate_rules(transaction_df):
         low_memory=True, 
         max_len=10
     )
+    
+    # Add num_itemsets argument (total number of transactions)
     rules_apriori = association_rules(
         frequent_itemsets, 
+        num_itemsets=len(transaction_df),  # Fix: add number of transactions
         metric='confidence', 
         min_threshold=0.5
     )
@@ -65,8 +68,11 @@ def generate_rules(transaction_df):
         use_colnames=True, 
         max_len=10
     )
+    
+    # Add num_itemsets argument
     rules_fp = association_rules(
         freq_itemsets_fp, 
+        num_itemsets=len(transaction_df),  # Fix: add number of transactions
         metric='confidence', 
         min_threshold=0.5
     )
