@@ -1,128 +1,108 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import networkx as nx
-from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
+from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 from collections import Counter
 
 # Title and App Info
 st.title("🛒 Grocery Recommendation App")
-st.info("An app to explore grocery recommendation using association rule mining.")
+st.info("This app provides product recommendations using association rule mining techniques.")
 
 # Load Dataset
-def load_data():
-    url = 'https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv'
-    data = pd.read_csv(url)
-    data.dropna(inplace=True)
-    return data
+data_url = 'https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv'
+data = pd.read_csv(data_url)
+data.dropna(inplace=True)
 
-data = load_data()
-
-# Dataset Exploration
-with st.expander("Dataset"):
-    st.write("**Raw Data**")
+# Display Dataset
+with st.expander("Dataset Overview"):
+    st.write("**Sample of Raw Data**")
     st.write(data.head())
-    st.write("**Data Info**")
-    st.text(data.info())
 
-# Process Data
-def preprocess_data(data):
-    transaction_data = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: list(set(x))).reset_index()
-    transaction_data = transaction_data.drop(columns=['Member_number', 'Date'])
-    transaction_data.columns = ['Transactions']
-    return transaction_data['Transactions']
+# Preprocess Data
+trans_data = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: ','.join(x)).reset_index()
+trans_data = trans_data.drop(columns=['Member_number', 'Date'])
+trans_data.columns = ['itemDescription']
+transactions = trans_data['itemDescription'].str.split(',')
 
-transactions = preprocess_data(data)
-
-# Encoding Transactions
+# Encode Data for Model
 te = TransactionEncoder()
 te_array = te.fit(transactions).transform(transactions)
 transaction_df = pd.DataFrame(te_array, columns=te.columns_)
 
-# Visualization: Item Frequency
-def plot_item_frequency(transactions, top_n=20):
-    item_counts = Counter(item for sublist in transactions for item in sublist)
-    most_common_items = item_counts.most_common(top_n)
-    items, counts = zip(*most_common_items)
-    plt.figure(figsize=(10, 6))
-    plt.bar(items, counts, color=plt.cm.Pastel2(range(len(items))))
-    plt.title("Top 20 Items by Frequency")
-    plt.xticks(rotation=90)
-    plt.ylabel("Frequency")
-    plt.tight_layout()
-    st.pyplot(plt)
-
-with st.expander("Item Frequency"):
-    st.subheader("Top 20 Items")
-    plot_item_frequency(transactions)
-
 # Generate Frequent Itemsets and Rules
-def generate_rules(df, method='apriori', min_support=0.01, min_confidence=0.2):
-    if method == 'apriori':
-        frequent_itemsets = apriori(df, min_support=min_support, use_colnames=True)
-    else:
-        frequent_itemsets = fpgrowth(df, min_support=min_support, use_colnames=True)
-
-    if frequent_itemsets.empty:
-        return pd.DataFrame()
-
+def generate_rules(transaction_df, min_support, min_confidence):
+    frequent_itemsets = apriori(transaction_df, min_support=min_support, use_colnames=True)
     rules = association_rules(frequent_itemsets, metric='confidence', min_threshold=min_confidence)
-    return rules
+    return frequent_itemsets, rules
 
-method = st.sidebar.selectbox("Select Algorithm", ["Apriori", "FP-Growth"])
-min_support = st.sidebar.slider("Minimum Support", 0.001, 0.05, 0.01)
-min_confidence = st.sidebar.slider("Minimum Confidence", 0.1, 1.0, 0.2)
+# User Input Section
+st.sidebar.header("Input Parameters")
+min_support = st.sidebar.slider("Minimum Support", 0.0001, 0.05, 0.001, step=0.0001)
+min_confidence = st.sidebar.slider("Minimum Confidence", 0.1, 1.0, 0.7, step=0.1)
+user_input = st.sidebar.text_input("Enter product(s) (comma-separated):", "bottled water")
 
-rules = generate_rules(transaction_df, method.lower(), min_support, min_confidence)
+# Generate Rules
+frequent_itemsets, rules = generate_rules(transaction_df, min_support, min_confidence)
 
-with st.expander("Generated Rules"):
-    if not rules.empty:
-        st.write(rules.head())
-    else:
-        st.write("No rules generated. Try adjusting the support or confidence thresholds.")
+# Display Frequent Itemsets
+with st.expander("Frequent Itemsets"):
+    st.write(frequent_itemsets)
 
-# Prediction Function
-def make_prediction(antecedent, rules, top_n=3):
-    if rules.empty:
-        return []
+# Display Rules
+with st.expander("Association Rules"):
+    st.write(rules)
 
-    matching_rules = rules[rules['antecedents'].apply(lambda x: antecedent.issubset(x))]
+# Recommendation Based on User Input
+def make_prediction(antecedents, rules, top_n=5):
+    antecedent_set = set(antecedents)
+    matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent_set))]
     top_rules = matching_rules.sort_values(by='confidence', ascending=False).head(top_n)
     predictions = top_rules['consequents'].tolist()
     formatted_predictions = [', '.join(list(consequent)) for consequent in predictions]
     return formatted_predictions
 
-antecedent_input = st.text_input("Enter items (comma-separated):", "bottled water")
-if antecedent_input:
-    antecedent = set(antecedent_input.split(', '))
-    predictions = make_prediction(antecedent, rules)
+if user_input:
+    user_products = [item.strip() for item in user_input.split(',')]
+    predictions = make_prediction(user_products, rules)
+    st.subheader("Recommendations")
     if predictions:
-        st.write(f"**Predicted Consequents for {antecedent}:** {predictions}")
+        st.write(f"For the product(s): {', '.join(user_products)}, we recommend:")
+        for i, pred in enumerate(predictions, 1):
+            st.write(f"{i}. {pred}")
     else:
-        st.write("No predictions available for the given items.")
+        st.write("No recommendations found for the given input.")
 
-# Visualization: Graph of Rules
-def plot_graph(rules, top_n=10):
-    if rules.empty:
-        st.write("No rules available for graph visualization.")
-        return
+# Visualizations
+with st.expander("Visualizations"):
+    st.subheader("Item Frequency Plot")
+    def plot_item_frequency(transactions, top_n=20):
+        item_counts = Counter(item for sublist in transactions for item in sublist)
+        most_common_items = item_counts.most_common(top_n)
+        items, counts = zip(*most_common_items)
+        plt.figure(figsize=(10, 6))
+        plt.bar(items, counts, color=plt.cm.Pastel2(range(len(items))))
+        plt.xticks(rotation=90)
+        plt.title("Top Items by Frequency")
+        plt.ylabel("Frequency")
+        st.pyplot(plt)
 
+    plot_item_frequency(transactions)
+
+    st.subheader("Top Association Rules Graph")
     G = nx.DiGraph()
-    top_rules = rules.nlargest(top_n, 'confidence')
+    top_rules = rules.nlargest(10, 'confidence')
     for _, rule in top_rules.iterrows():
         for antecedent in rule['antecedents']:
             for consequent in rule['consequents']:
                 G.add_edge(antecedent, consequent, weight=rule['lift'])
 
-    plt.figure(figsize=(10, 8))
     pos = nx.spring_layout(G, seed=42)
+    plt.figure(figsize=(10, 8))
+    edges = G.edges(data=True)
+    weights = [edge[2]['weight'] for edge in edges]
     nx.draw(G, pos, with_labels=True, node_color='lightblue', font_size=10, node_size=2000, 
-            edge_color='gray', width=2)
+            edge_color=weights, edge_cmap=plt.cm.viridis, width=2)
+    plt.title("Graph-Based Visualization of Top 10 Rules")
     st.pyplot(plt)
-
-with st.expander("Rule Graph"):
-    st.subheader("Graph Visualization of Rules")
-    plot_graph(rules)
