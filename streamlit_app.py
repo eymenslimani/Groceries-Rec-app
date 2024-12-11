@@ -1,65 +1,80 @@
 import streamlit as st
 import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
 from mlxtend.frequent_patterns import apriori, association_rules
+from mlxtend.preprocessing import TransactionEncoder
+from collections import Counter
 
-# Streamlit App Title
-st.title("Grocery Product Recommendation System")
+# Title and Info
+st.title("🛒 Grocery Recommendation App")
+st.info("An app to explore grocery recommendation using association rule mining.")
 
-# File Upload
-uploaded_file = st.file_uploader("Upload your transaction dataset (CSV format):", type="csv")
+# Load and Display Data
+with st.expander("Dataset"):
+    df = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
+    st.write("**Raw Data**")
+    st.write(df)
 
-if uploaded_file:
-    # Load Dataset
-    try:
-        data = pd.read_csv(uploaded_file)
-        st.write("### Preview of Uploaded Data")
-        st.dataframe(data.head())
+    # Preprocess Data
+    transaction_data = df.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: list(x)).tolist()
+    te = TransactionEncoder()
+    te_array = te.fit(transaction_data).transform(transaction_data)
+    transaction_df = pd.DataFrame(te_array, columns=te.columns_)
+    st.write("**Processed Transactions**")
+    st.write(transaction_df)
 
-        # Ensure data format is correct
-        st.write("### Dataset Information")
-        st.write(data.info())
+# Association Rule Mining
+min_support = st.sidebar.slider("Minimum Support", 0.0001, 0.05, 0.01)
+min_confidence = st.sidebar.slider("Minimum Confidence", 0.1, 1.0, 0.7)
 
-        # Check for proper structure
-        if 'Transaction' in data.columns and 'Item' in data.columns:
-            st.success("Dataset format looks good.")
+frequent_itemsets = apriori(transaction_df, min_support=min_support, use_colnames=True)
+rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
 
-            # Preprocess Data
-            st.write("### Preprocessing the Data")
-            transaction_df = data.groupby('Transaction')['Item'].apply(list).reset_index()
-            st.write(transaction_df.head())
+# Display Rules
+with st.expander("Association Rules"):
+    st.write("**Frequent Itemsets**")
+    st.write(frequent_itemsets)
+    st.write("**Association Rules**")
+    st.write(rules)
 
-            # Create Basket Format for One-Hot Encoding
-            st.write("### Transforming Data for Apriori Analysis")
-            basket = pd.get_dummies(transaction_df['Item'].apply(pd.Series).stack()).sum(level=0)
-            st.write(basket.head())
+# Input for Predictions
+with st.sidebar:
+    st.header("Input for Recommendations")
+    antecedent = st.multiselect("Select items", transaction_df.columns.tolist())
+    top_n = st.slider("Top N Recommendations", 1, 10, 3)
 
-            # Apriori Algorithm
-            min_support = st.slider("Select Minimum Support", min_value=0.01, max_value=0.5, value=0.01, step=0.01)
-            frequent_itemsets = apriori(basket, min_support=min_support, use_colnames=True)
+def make_prediction(antecedent, rules, top_n):
+    matching_rules = rules[rules['antecedents'].apply(lambda x: set(antecedent).issubset(x))]
+    top_rules = matching_rules.sort_values(by='confidence', ascending=False).head(top_n)
+    predictions = top_rules['consequents'].tolist()
+    return [', '.join(list(pred)) for pred in predictions]
 
-            st.write("### Frequent Itemsets")
-            st.dataframe(frequent_itemsets)
+if antecedent:
+    recommendations = make_prediction(antecedent, rules, top_n)
+    st.sidebar.write("**Recommendations**")
+    st.sidebar.write(recommendations)
 
-            # Association Rules
-            min_confidence = st.slider("Select Minimum Confidence", min_value=0.1, max_value=1.0, value=0.5, step=0.1)
-            rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
+# Visualization
+with st.expander("Visualizations"):
+    st.write("**Graph of Rules**")
+    G = nx.DiGraph()
+    for _, rule in rules.head(10).iterrows():
+        for antecedent in rule['antecedents']:
+            for consequent in rule['consequents']:
+                G.add_edge(antecedent, consequent, weight=rule['lift'])
+    pos = nx.spring_layout(G, seed=42)
+    plt.figure(figsize=(10, 8))
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', font_size=10, node_size=2000, 
+            edge_color='gray', width=2)
+    st.pyplot(plt)
 
-            st.write("### Association Rules")
-            st.dataframe(rules)
-
-            # Display Columns for Filtering Rules
-            st.write("### Filter Rules")
-            selected_metric = st.selectbox("Select Metric for Filtering", rules.columns)
-            threshold = st.slider(f"Select Minimum {selected_metric}", min_value=0.0, max_value=1.0, value=0.5, step=0.1)
-
-            filtered_rules = rules[rules[selected_metric] >= threshold]
-            st.write(f"### Filtered Rules by {selected_metric} >= {threshold}")
-            st.dataframe(filtered_rules)
-
-        else:
-            st.error("Dataset must contain 'Transaction' and 'Item' columns.")
-
-    except Exception as e:
-        st.error(f"An error occurred while processing the file: {e}")
-else:
-    st.info("Please upload a CSV file containing transaction data.")
+    st.write("**Heatmap of Rules (Support vs Lift)**")
+    if not rules.empty:
+        plt.figure(figsize=(10, 6))
+        heatmap_data = rules[['support', 'confidence', 'lift']].head(10)
+        st.write(heatmap_data)  # Display DataFrame for clarity
+        plt.barh(range(len(heatmap_data)), heatmap_data['lift'], color='skyblue')
+        plt.xlabel('Lift')
+        plt.title('Lift for Top Rules')
+        st.pyplot(plt)
