@@ -16,27 +16,28 @@ def load_data():
     """
     Load and preprocess the grocery dataset
     """
-    # Load the dataset from GitHub raw file
-    data = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
-    data.dropna(inplace=True)
+    try:
+        # Load the dataset from GitHub raw file
+        data = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
+        data.dropna(inplace=True)
 
-    # Prepare transactions
-    transactionData = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: ','.join(x)).reset_index()
-    transactionData = transactionData.drop(columns=['Member_number', 'Date'])
-    transactionData.columns = ['itemDescription']
+        # Prepare transactions
+        transactionData = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: ','.join(x)).reset_index()
+        transactionData = transactionData.drop(columns=['Member_number', 'Date'])
+        transactionData.columns = ['itemDescription']
 
-    # Process transactions
-    transactions = transactionData['itemDescription'].str.split(',')
+        # Process transactions
+        transactions = transactionData['itemDescription'].str.split(',')
 
-    # Encode transactions
-    te = TransactionEncoder()
-    te_array = te.fit(transactions).transform(transactions)
-    transaction_df = pd.DataFrame(te_array, columns=te.columns_)
+        # Encode transactions
+        te = TransactionEncoder()
+        te_array = te.fit(transactions).transform(transactions)
+        transaction_df = pd.DataFrame(te_array, columns=te.columns_)
 
-    return transaction_df, te.columns_, transactions
-
-# Load data
-transaction_df, unique_items, transactions = load_data()
+        return transaction_df, te.columns_, transactions
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return None, None, None
 
 # Generate rules with caching
 @st.cache_data
@@ -44,73 +45,102 @@ def generate_rules(transaction_df):
     """
     Generate association rules using Apriori and FP-Growth algorithms
     """
-    # Apriori algorithm
-    frequent_itemsets = apriori(
-        transaction_df, 
-        min_support=0.001, 
-        use_colnames=True, 
-        low_memory=True, 
-        max_len=10
-    )
-    
-    # Add num_itemsets argument (total number of transactions)
-    rules_apriori = association_rules(
-        frequent_itemsets, 
-        num_itemsets=len(transaction_df),  # Fix: add number of transactions
-        metric='confidence', 
-        min_threshold=0.5
-    )
+    try:
+        # Apriori algorithm
+        frequent_itemsets_apriori = apriori(
+            transaction_df, 
+            min_support=0.001, 
+            use_colnames=True, 
+            low_memory=True, 
+            max_len=10
+        )
+        
+        rules_apriori = association_rules(
+            frequent_itemsets_apriori, 
+            metric='confidence', 
+            min_threshold=0.1
+        )
 
-    # FP-Growth algorithm
-    freq_itemsets_fp = fpgrowth(
-        transaction_df, 
-        min_support=0.001, 
-        use_colnames=True, 
-        max_len=10
-    )
-    
-    # Add num_itemsets argument
-    rules_fp = association_rules(
-        freq_itemsets_fp, 
-        num_itemsets=len(transaction_df),  # Fix: add number of transactions
-        metric='confidence', 
-        min_threshold=0.5
-    )
+        # FP-Growth algorithm
+        frequent_itemsets_fp = fpgrowth(
+            transaction_df, 
+            min_support=0.001, 
+            use_colnames=True, 
+            max_len=10
+        )
+        
+        rules_fp = association_rules(
+            frequent_itemsets_fp, 
+            metric='confidence', 
+            min_threshold=0.1
+        )
 
-    return rules_apriori, rules_fp
-
-# Generate rules
-rules_apriori, rules_fp = generate_rules(transaction_df)
+        return rules_apriori, rules_fp
+    except Exception as e:
+        st.error(f"Error generating rules: {e}")
+        return None, None
 
 def make_prediction(antecedent, rules, top_n=5):
     """
     Generate product recommendations based on association rules
     """
-    matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent))]
-    
-    if matching_rules.empty:
+    try:
+        # Convert antecedent to frozenset if it's not already
+        antecedent = frozenset(antecedent) if not isinstance(antecedent, frozenset) else antecedent
+        
+        # Broader matching strategy
+        matching_rules = rules[
+            rules['antecedents'].apply(
+                lambda x: x.issubset(antecedent) or 
+                any(item in antecedent for item in x)
+            )
+        ]
+        
+        if matching_rules.empty:
+            return []
+        
+        # Sort rules by confidence and lift
+        top_rules = matching_rules.sort_values(
+            by=['confidence', 'lift'], 
+            ascending=False
+        ).head(top_n)
+        
+        # Format predictions
+        formatted_predictions = []
+        for i, (consequent, confidence, lift, support) in enumerate(zip(
+            top_rules['consequents'], 
+            top_rules['confidence'], 
+            top_rules['lift'],
+            top_rules['support']
+        ), 1):
+            formatted_predictions.append({
+                'rank': i,
+                'product': ', '.join(list(consequent)),
+                'confidence': f"{confidence:.2%}",
+                'lift': f"{lift:.2f}",
+                'support': f"{support:.4f}"
+            })
+        
+        return formatted_predictions
+    except Exception as e:
+        st.error(f"Error in recommendation generation: {e}")
         return []
-    
-    top_rules = matching_rules.sort_values(by='confidence', ascending=False).head(top_n)
-    predictions = top_rules['consequents'].tolist()
-    
-    # Format predictions and add confidence and lift information
-    formatted_predictions = []
-    for i, (consequent, confidence, lift) in enumerate(zip(
-        top_rules['consequents'], 
-        top_rules['confidence'], 
-        top_rules['lift']
-    ), 1):
-        formatted_predictions.append({
-            'rank': i,
-            'product': ', '.join(list(consequent)),
-            'confidence': f"{confidence:.2%}",
-            'lift': f"{lift:.2f}"
-        })
-    
-    return formatted_predictions
 
 def main():
+    # Load data
+    transaction_df, unique_items, transactions = load_data()
+    
+    if transaction_df is None:
+        st.error("Failed to load data. Please check your connection.")
+        return
+    
+    # Generate rules
+    rules_apriori, rules_fp = generate_rules(transaction_df)
+    
+    if rules_apriori is None or rules_fp is None:
+        st.error("Failed to generate association rules.")
+        return
+
     st.title("🛒 Grocery Recommendation System")
     
     # Sidebar for configuration
@@ -149,7 +179,7 @@ def main():
             rec_df = pd.DataFrame(recommendations)
             st.table(rec_df)
         else:
-            st.warning("No recommendations found for the selected products.")
+            st.warning(f"No recommendations found for {', '.join(selected_products)}. Try different products.")
     
     # Data Visualization Section
     st.header("📊 Data Insights")
