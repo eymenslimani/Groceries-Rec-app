@@ -46,6 +46,9 @@ def generate_rules(transaction_df):
     Generate association rules using Apriori and FP-Growth algorithms
     """
     try:
+        # Total number of transactions
+        num_transactions = len(transaction_df)
+
         # Apriori algorithm
         frequent_itemsets_apriori = apriori(
             transaction_df, 
@@ -58,7 +61,8 @@ def generate_rules(transaction_df):
         rules_apriori = association_rules(
             frequent_itemsets_apriori, 
             metric='confidence', 
-            min_threshold=0.1
+            min_threshold=0.1,
+            num_itemsets=num_transactions  # Add this parameter
         )
 
         # FP-Growth algorithm
@@ -72,7 +76,8 @@ def generate_rules(transaction_df):
         rules_fp = association_rules(
             frequent_itemsets_fp, 
             metric='confidence', 
-            min_threshold=0.1
+            min_threshold=0.1,
+            num_itemsets=num_transactions  # Add this parameter
         )
 
         return rules_apriori, rules_fp
