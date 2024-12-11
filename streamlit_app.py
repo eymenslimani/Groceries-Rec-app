@@ -38,18 +38,27 @@ transaction_df, unique_items, num_transactions = load_data()
 # Generate rules
 @st.cache_data
 def generate_rules(transaction_df):
-    # Apriori algorithm
-    frequent_itemsets = apriori(transaction_df, min_support=0.001, use_colnames=True, low_memory=True, max_len=10)
-    rules = association_rules(frequent_itemsets, metric='confidence', min_threshold=0.5)
+    try:
+        # Apriori algorithm
+        frequent_itemsets = apriori(transaction_df, min_support=0.001, use_colnames=True, low_memory=True, max_len=10)
+        rules = association_rules(frequent_itemsets, metric='confidence', min_threshold=0.5)
 
-    # FP-Growth algorithm
-    freq_itemsets_fp = fpgrowth(transaction_df, min_support=0.001, use_colnames=True, max_len=10)
-    rules_fp = association_rules(freq_itemsets_fp, metric='confidence', min_threshold=0.5)
+        # FP-Growth algorithm
+        freq_itemsets_fp = fpgrowth(transaction_df, min_support=0.001, use_colnames=True, max_len=10)
+        rules_fp = association_rules(freq_itemsets_fp, metric='confidence', min_threshold=0.5)
 
-    return rules, rules_fp
+        return rules, rules_fp
+    except Exception as e:
+        st.error(f"Error generating rules: {e}")
+        return None, None  # Return None gracefully
 
 # Generate rules
 rules, rules_fp = generate_rules(transaction_df)
+
+# Handle potential errors in rule generation
+if rules is None or rules_fp is None:
+    st.error("Error generating association rules. Please check the logs for details.")
+    st.stop()  # Stop execution if rules generation fails
 
 # Ensure numeric columns
 rules['confidence'] = pd.to_numeric(rules['confidence'], errors='coerce')
