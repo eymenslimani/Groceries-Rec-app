@@ -28,7 +28,7 @@ def load_data():
         # Aggregate transactions by Member and Date
         transaction_data = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(list).reset_index()
         #Dropping Unnecessary Columns: Member Number and Date
-        transaxtionData = transaxtionData.drop(columns=['Member_number', 'Date'])
+        transaxtionData = transaction_data.drop(columns=['Member_number', 'Date'])
         transaxtionData.columns = ['itemDescription']
         df = transaxtionDat .drop(index=0).reset_index(drop=True)
         #Splitting and Exploring Data
