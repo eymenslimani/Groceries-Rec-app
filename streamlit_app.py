@@ -10,7 +10,7 @@ from mlxtend.preprocessing import TransactionEncoder
 from collections import Counter
 
 # Page Configuration
-st.set_page_config(page_title="Advanced Grocery Recommendation App", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Grocery Recommendation App", page_icon="🛒", layout="wide")
 
 # Enhanced data loading with more preprocessing
 @st.cache_data
@@ -26,12 +26,10 @@ def load_data():
         data.dropna(inplace=True)
 
         # Aggregate transactions by Member and Date
-        transactionData = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: ','.join(x)).reset_index()
-        transactionData = transactionData.drop(columns=['Member_number', 'Date'])
-        transactionData.columns = ['itemDescription']
-
-        # Process transactions
-        transactions = transactionData['itemDescription'].str.split(',')
+        transactionData = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: list(set(x))).reset_index()
+        
+        # Prepare transactions for encoding
+        transactions = transactionData['itemDescription'].tolist()
 
         # Encode transactions
         te = TransactionEncoder()
@@ -43,44 +41,39 @@ def load_data():
         st.error(f"Error loading data: {e}")
         return None, None, None
 
-# Enhanced rules generation with visualization
+# Simplified rules generation
 @st.cache_data
 def generate_rules(transaction_df):
     """
-    Generate association rules with visualization
+    Generate association rules with lower thresholds
     """
     try:
-        num_transactions = len(transaction_df)
-
-        # Apriori Rules
+        # Generate Apriori Rules with lower thresholds
         frequent_itemsets_apriori = apriori(
             transaction_df, 
-            min_support=0.05,  
+            min_support=0.02,  # Lowered support threshold
             use_colnames=True, 
-            low_memory=True, 
-            max_len=5
+            max_len=3  # Limit to smaller itemsets
         )
         
         rules_apriori = association_rules(
             frequent_itemsets_apriori, 
-            metric='lift',
-            min_threshold=1.5,
-            num_itemsets=num_transactions
+            metric='confidence',
+            min_threshold=0.3  # Lowered confidence threshold
         )
 
-        # FP-Growth Rules
+        # Generate FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(
             transaction_df, 
-            min_support=0.05,  
+            min_support=0.02,  
             use_colnames=True, 
-            max_len=5
+            max_len=3
         )
         
         rules_fp = association_rules(
             frequent_itemsets_fp, 
-            metric='lift',
-            min_threshold=1.5,
-            num_itemsets=num_transactions
+            metric='confidence',
+            min_threshold=0.3
         )
 
         return rules_apriori, rules_fp
@@ -90,41 +83,41 @@ def generate_rules(transaction_df):
 
 def make_prediction(antecedent, rules, top_n=5):
     """
-    Enhanced recommendation generation with detailed rules
+    Simplified recommendation generation
     """
     try:
+        # Convert antecedent to a frozenset if it isn't already
         antecedent = frozenset(antecedent) if not isinstance(antecedent, frozenset) else antecedent
         
-        # More intelligent rule matching
+        # Find rules where at least some of the antecedent items are present
         matching_rules = rules[
             rules['antecedents'].apply(
-                lambda x: x.issubset(antecedent) or 
-                len(x.intersection(antecedent)) > 0
+                lambda x: len(x.intersection(antecedent)) > 0
             )
         ]
         
         if matching_rules.empty:
             return []
         
-        # Prioritize rules with higher lift and confidence
+        # Sort by confidence and lift
         top_rules = matching_rules.sort_values(
-            by=['lift', 'confidence'], 
+            by=['confidence', 'lift'], 
             ascending=False
         ).head(top_n)
         
-        # More detailed recommendation formatting
+        # Format predictions
         formatted_predictions = []
-        for i, (consequent, lift, confidence, support) in enumerate(zip(
+        for i, (consequent, confidence, lift, support) in enumerate(zip(
             top_rules['consequents'], 
-            top_rules['lift'],
             top_rules['confidence'],
+            top_rules['lift'],
             top_rules['support']
         ), 1):
             formatted_predictions.append({
                 'rank': i,
                 'product': ', '.join(list(consequent)),
-                'lift': f"{lift:.2f}",
                 'confidence': f"{confidence:.2%}",
+                'lift': f"{lift:.2f}",
                 'support': f"{support:.4f}"
             })
         
@@ -141,7 +134,7 @@ def visualize_item_frequencies(transaction_df, top_n=20):
     
     fig, ax = plt.subplots(figsize=(15, 7))
     sns.barplot(x=item_frequencies.index, y=item_frequencies.values, palette='viridis')
-    plt.title(f"Top {top_n} Most Frequent Items in Grocery Dataset", fontsize=15)
+    plt.title(f"Top {top_n} Most Frequent Items", fontsize=15)
     plt.xlabel("Items", fontsize=12)
     plt.ylabel("Frequency", fontsize=12)
     plt.xticks(rotation=45, ha='right', fontsize=10)
@@ -176,7 +169,7 @@ def visualize_top_rules(rules, top_n=10):
     return fig
 
 def main():
-    st.title("🛒 Advanced Grocery Recommendation System")
+    st.title("🛒 Grocery Recommendation System")
     
     # Load data
     transaction_df, unique_items, transactions = load_data()
