@@ -28,11 +28,10 @@ def load_data():
         # Aggregate transactions by Member and Date
         transaction_data = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(list).reset_index()
         # Dropping Unnecessary Columns: Member Number and Date
-        transaxtionData = transaction_data.drop(columns=['Member_number', 'Date'])
-        transaxtionData.columns = ['itemDescription']
+        transaction_data = transaction_data.drop(columns=['Member_number', 'Date'])
+        transaction_data.columns = ['itemDescription']
        
-        df = transaxtionData.drop(index=0).reset_index(drop=True)
-        # Splitting and Exploring Data
+        df = transaction_data.reset_index(drop=True)
         transactions = df['itemDescription'].tolist()
         
         # Encode transactions
@@ -52,18 +51,14 @@ def generate_rules(transaction_df):
     Generate association rules with refined parameters
     """
     try:
-        # Total number of transactions
-        num_transactions = len(transaction_df)
-
         # Generate Apriori Rules
         frequent_itemsets_apriori = apriori(transaction_df, min_support=0.3, use_colnames=True, low_memory=True, max_len=10)
-        
-        rules_apriori = association_rules(frequent_itemsets_apriori,num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_apriori = association_rules(frequent_itemsets_apriori, num_itemsets=len(transaction_df),metric='confidence', min_threshold=0.7)
 
         # Generate FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True, max_len=10)
-         # Generate FP-Growth Rules
-        rules_fp =  association_rules(frequent_itemsets_fp,num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_fp = association_rules(frequent_itemsets_fp, num_itemsets=len(transaction_df),metric='confidence', min_threshold=0.7)
+
         return rules_apriori, rules_fp
     except Exception as e:
         st.error(f"Error generating rules: {e}")
@@ -75,21 +70,23 @@ def make_prediction(antecedent, rules, top_n=5):
     """
     try:
         matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent))]
-        top_rules = matching_rules.sort_values(by='lift', ascending=False).head(top_n)
-
-        recommendations = []
-
-        for _, rule in top_rules.iterrows():
+        
+        # Select unique recommendations with highest lift
+        recommendations = {}
+        for _, rule in matching_rules.iterrows():
             for consequent in rule['consequents']:
-                if consequent not in antecedent and consequent not in recommendations:
-                    recommendations.append({
-                        'Item': consequent,
-                        'Lift': rule['lift'],
-                        'Confidence': rule['confidence'],
-                        'Support': rule['support']
-                    })
+                if consequent not in antecedent:
+                    if consequent not in recommendations or rule['lift'] > recommendations[consequent]['Lift']:
+                        recommendations[consequent] = {
+                            'Lift': rule['lift'],
+                            'Confidence': rule['confidence'],
+                            'Support': rule['support']
+                        }
 
-        return recommendations
+        # Convert to sorted list by lift
+        sorted_recommendations = sorted(recommendations.items(), key=lambda x: x[1]['Lift'], reverse=True)[:top_n]
+        
+        return [{"Item": item, **metrics} for item, metrics in sorted_recommendations]
     except Exception as e:
         st.error(f"Error in recommendation generation: {e}")
         return []
@@ -199,5 +196,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
