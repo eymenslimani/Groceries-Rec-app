@@ -23,19 +23,22 @@ def load_data():
         data = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
         
         # Basic preprocessing
-        data.dropna(subset=['itemDescription'], inplace=True)
+        data.dropna( inplace=True)
 
         # Aggregate transactions by Member and Date
         transaction_data = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(list).reset_index()
+        #Dropping Unnecessary Columns: Member Number and Date
+        transaxtionData = transaxtionData.drop(columns=['Member_number', 'Date'])
+        transaxtionData.columns = ['itemDescription']
+        df = transaxtionDat .drop(index=0).reset_index(drop=True)
+        #Splitting and Exploring Data
+        transactions = df[0].str.split(',')
         
-        # Prepare unique transactions
-        transactions = [list(set(trans)) for trans in transaction_data['itemDescription']]
-
         # Encode transactions
         te = TransactionEncoder()
         te_array = te.fit(transactions).transform(transactions)
         transaction_df = pd.DataFrame(te_array, columns=te.columns_)
-
+      
         return transaction_df, te.columns_, transactions
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -52,35 +55,14 @@ def generate_rules(transaction_df):
         num_transactions = len(transaction_df)
 
         # Generate Apriori Rules
-        frequent_itemsets_apriori = apriori(
-            transaction_df, 
-            min_support=0.01,  # Adjusted support threshold
-            use_colnames=True, 
-            max_len=3  # Limit itemset length
-        )
+        frequent_itemsets_apriori = apriori(transaction_df, min_support=0.3, use_colnames=True, low_memory=True,max_len=10)
         
-        rules_apriori = association_rules(
-            frequent_itemsets_apriori, 
-            metric='confidence',
-            min_threshold=0.2,  # Adjusted confidence threshold
-            num_itemsets=num_transactions
-        )
+        rules_apriori = association_rules(frequent_itemsets, num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
 
         # Generate FP-Growth Rules
-        frequent_itemsets_fp = fpgrowth(
-            transaction_df, 
-            min_support=0.01,  
-            use_colnames=True, 
-            max_len=3
-        )
-        
-        rules_fp = association_rules(
-            frequent_itemsets_fp, 
-            metric='confidence',
-            min_threshold=0.2,
-            num_itemsets=num_transactions
-        )
-
+        frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True,max_len=10)
+         # Generate FP-Growth Rules
+        rules_fp =  association_rules(freq_itemsets, num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
         return rules_apriori, rules_fp
     except Exception as e:
         st.error(f"Error generating rules: {e}")
@@ -92,60 +74,34 @@ def make_prediction(antecedent, rules, top_n=5):
     """
     try:
         # Convert antecedent to a frozenset
-        antecedent = frozenset(antecedent) if not isinstance(antecedent, frozenset) else antecedent
-        
-        # Find matching rules
-        matching_rules = rules[
-            rules['antecedents'].apply(
-                lambda x: len(x.intersection(antecedent)) > 0
-            )
-        ]
-        
-        if matching_rules.empty:
-            return []
-        
-        # Sort and select top recommendations
-        top_rules = matching_rules.sort_values(
-            by=['confidence', 'lift'], 
-            ascending=False
-        ).head(top_n)
-        
-        # Format predictions
-        formatted_predictions = []
-        for i, (consequent, confidence, lift, support) in enumerate(zip(
-            top_rules['consequents'], 
-            top_rules['confidence'],
-            top_rules['lift'],
-            top_rules['support']
-        ), 1):
-            formatted_predictions.append({
-                'rank': i,
-                'product': ', '.join(list(consequent)),
-                'confidence': f"{confidence:.2%}",
-                'lift': f"{lift:.2f}",
-                'support': f"{support:.4f}"
-            })
-        
-        return formatted_predictions
+        def make_prediction(antecedent, rules, top_n=3):
+            matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent))]
+            top_rules = matching_rules.sort_values(by='lift', ascending=False).head(top_n)
+    
+            unique_predictions = set()
+            split_predictions = []
+    
+            for consequents in top_rules['consequents']:
+                for item in consequents:
+                    if item not in unique_predictions:
+                       unique_predictions.add(item)
+                       split_predictions.append(item)
+    
+            return split_predictions
     except Exception as e:
         st.error(f"Error in recommendation generation: {e}")
         return []
 
-def visualize_item_frequencies(transaction_df, top_n=20):
-    """
-    Create item frequency visualization
-    """
-    item_frequencies = transaction_df.sum().sort_values(ascending=False).head(top_n)
+def plot_item_frequency(transactions, top_n=20):
+    item_counts = Counter(item for sublist in transactions for item in sublist)
+    most_common_items = item_counts.most_common(top_n)
     
-    plt.figure(figsize=(15, 7))
-    sns.barplot(x=item_frequencies.index, y=item_frequencies.values, palette='viridis')
-    plt.title(f"Top {top_n} Most Frequent Items", fontsize=15)
-    plt.xlabel("Items", fontsize=12)
-    plt.ylabel("Frequency", fontsize=12)
-    plt.xticks(rotation=45, ha='right', fontsize=10)
-    plt.tight_layout()
-    
-    return plt.gcf()
+    items, counts = zip(*most_common_items)
+    plt.bar(items, counts, color=plt.cm.Pastel2(range(len(items))))
+    plt.title("Absolute Item Frequency Plot")
+    plt.xticks(rotation=90)
+    plt.ylabel("Frequency")
+    plt.show()
 
 def visualize_top_rules(rules, top_n=10):
     """
@@ -227,7 +183,7 @@ def main():
     
     # Item Frequencies
     st.subheader("Top 20 Most Frequent Items")
-    fig_frequencies = visualize_item_frequencies(transaction_df)
+    plot_item_frequency(transactions)
     st.pyplot(fig_frequencies)
     plt.close(fig_frequencies)
     
