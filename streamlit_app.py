@@ -12,7 +12,7 @@ from typing import List, Dict, Any
 st.set_page_config(page_title="Smart Grocery Recommender", page_icon="🛒", layout="wide")
 
 @st.cache_data
-def load_and_preprocess_data(url: str = 'https://raw.githubusercontent.com/yourusername/your-repo/main/groceries_dataset.csv'):
+def load_and_preprocess_data(url: str = 'https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv'):
     """
     Enhanced data loading with category-aware preprocessing
     """
