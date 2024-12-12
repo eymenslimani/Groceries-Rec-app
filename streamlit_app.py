@@ -57,14 +57,14 @@ def generate_rules(transaction_df):
 
         # Generate FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True, max_len=10)
-        rules_fp = association_rules(frequent_itemsets_fp, num_itemsets=len(transaction_df),metric='confidence', min_threshold=0.7)
+        rules_fp = association_rules(frequent_itemsets_fp,num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
 
         return rules_apriori, rules_fp
     except Exception as e:
         st.error(f"Error generating rules: {e}")
         return None, None
 
-def make_prediction(antecedent, rules, top_n=5):
+def make_prediction(antecedent, rules, top_n=3):
     """
     Generate recommendations based on input items
     """
@@ -196,4 +196,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
