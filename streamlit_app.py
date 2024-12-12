@@ -58,12 +58,12 @@ def generate_rules(transaction_df):
         # Generate Apriori Rules
         frequent_itemsets_apriori = apriori(transaction_df, min_support=0.3, use_colnames=True, low_memory=True,max_len=10)
         
-        rules_apriori = association_rules(frequent_itemsets, num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_apriori = association_rules(frequent_itemsets metric='confidence', min_threshold=0.7)
 
         # Generate FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True,max_len=10)
          # Generate FP-Growth Rules
-        rules_fp =  association_rules(freq_itemsets, num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_fp =  association_rules(freq_itemsets, metric='confidence', min_threshold=0.7)
         return rules_apriori, rules_fp
     except Exception as e:
         st.error(f"Error generating rules: {e}")
