@@ -30,7 +30,7 @@ def load_data():
         #Dropping Unnecessary Columns: Member Number and Date
         transaxtionData = transaction_data.drop(columns=['Member_number', 'Date'])
         transaxtionData.columns = ['itemDescription']
-        df = transaxtionDat .drop(index=0).reset_index(drop=True)
+        df = transaxtionData.drop(index=0).reset_index(drop=True)
         #Splitting and Exploring Data
         transactions = df[0].str.split(',')
         
