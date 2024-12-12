@@ -58,12 +58,12 @@ def generate_rules(transaction_df):
         # Generate Apriori Rules
         frequent_itemsets_apriori = apriori(transaction_df, min_support=0.3, use_colnames=True, low_memory=True, max_len=10)
         
-        rules_apriori = association_rules(frequent_itemsets_apriori,num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_apriori = association_rules(frequent_itemsets_apriori, metric='confidence', min_threshold=0.7)
 
         # Generate FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True, max_len=10)
          # Generate FP-Growth Rules
-        rules_fp =  association_rules(frequent_itemsets_fp,num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_fp =  association_rules(frequent_itemsets_fp, metric='confidence', min_threshold=0.7)
         return rules_apriori, rules_fp
     except Exception as e:
         st.error(f"Error generating rules: {e}")
@@ -77,16 +77,19 @@ def make_prediction(antecedent, rules, top_n=5):
         matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent))]
         top_rules = matching_rules.sort_values(by='lift', ascending=False).head(top_n)
 
-        unique_predictions = set()
-        split_predictions = []
+        recommendations = []
 
-        for consequents in top_rules['consequents']:
-            for item in consequents:
-                if item not in unique_predictions:
-                   unique_predictions.add(item)
-                   split_predictions.append(item)
+        for _, rule in top_rules.iterrows():
+            for consequent in rule['consequents']:
+                if consequent not in antecedent and consequent not in recommendations:
+                    recommendations.append({
+                        'Item': consequent,
+                        'Lift': rule['lift'],
+                        'Confidence': rule['confidence'],
+                        'Support': rule['support']
+                    })
 
-        return split_predictions
+        return recommendations
     except Exception as e:
         st.error(f"Error in recommendation generation: {e}")
         return []
@@ -172,7 +175,7 @@ def main():
         st.header(f"🏷️ Recommendations using {algorithm}")
         
         if recommendations:
-            rec_df = pd.DataFrame(recommendations, columns=['Recommendations'])
+            rec_df = pd.DataFrame(recommendations)
             st.table(rec_df)
         else:
             st.warning(f"No recommendations found for {', '.join(selected_products)}. Try different products.")
@@ -196,4 +199,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
