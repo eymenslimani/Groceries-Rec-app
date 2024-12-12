@@ -53,11 +53,11 @@ def generate_rules(transaction_df):
     try:
         # Generate Apriori Rules
         frequent_itemsets_apriori = apriori(transaction_df, min_support=0.3, use_colnames=True, low_memory=True, max_len=10)
-        rules_apriori = association_rules(frequent_itemsets_apriori, num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_apriori = association_rules(frequent_itemsets_apriori, metric='confidence', min_threshold=0.7)
 
         # Generate FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True, max_len=10)
-        rules_fp = association_rules(frequent_itemsets_fp, num_itemsets=len(transaction_df), metric='confidence', min_threshold=0.7)
+        rules_fp = association_rules(frequent_itemsets_fp, metric='confidence', min_threshold=0.7)
 
         return rules_apriori, rules_fp
     except Exception as e:
@@ -154,10 +154,9 @@ def main():
     )
     
     selected_products = st.sidebar.multiselect(
-        "Select Products (Limit: 3)", 
+        "Select Products", 
         sorted(unique_items), 
-        max_selections=3,
-        placeholder="Choose up to 3 products"
+        placeholder="Choose products"
     )
     
     if st.sidebar.button("Get Recommendations"):
@@ -196,3 +195,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
