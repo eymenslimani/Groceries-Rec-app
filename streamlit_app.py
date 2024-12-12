@@ -6,202 +6,197 @@ import seaborn as sns
 
 from mlxtend.frequent_patterns import apriori, association_rules, fpgrowth
 from mlxtend.preprocessing import TransactionEncoder
-from collections import Counter
+from typing import List, Dict, Any
 
 # Page Configuration
-st.set_page_config(page_title="Advanced Grocery Recommendation App", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="Smart Grocery Recommender", page_icon="🛒", layout="wide")
 
-# Enhanced data loading with more preprocessing
 @st.cache_data
-def load_data():
+def load_and_preprocess_data(url: str = 'https://raw.githubusercontent.com/yourusername/your-repo/main/groceries_dataset.csv'):
     """
-    Load and preprocess the grocery dataset with enhanced preprocessing
+    Enhanced data loading with category-aware preprocessing
     """
     try:
-        # Load the dataset from GitHub raw file
-        data = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
+        # Load data
+        data = pd.read_csv(url)
         
-        # More robust preprocessing
-        data.dropna(inplace=True)
-
-        # Aggregate transactions by Member and Date
-        transactionData = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: ','.join(x)).reset_index()
-        transactionData = transactionData.drop(columns=['Member_number', 'Date'])
-        transactionData.columns = ['itemDescription']
-
-        # Process transactions
-        transactions = transactionData['itemDescription'].str.split(',')
-
-        # Encode transactions
+        # Drop duplicates and reset index
+        data.drop_duplicates(inplace=True)
+        
+        # Preprocess transactions
+        transactions_by_member = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(list).reset_index()
+        
+        # Create transaction encoder
         te = TransactionEncoder()
-        te_array = te.fit(transactions).transform(transactions)
+        te_array = te.fit(transactions_by_member['itemDescription']).transform(transactions_by_member['itemDescription'])
         transaction_df = pd.DataFrame(te_array, columns=te.columns_)
-
-        return transaction_df, te.columns_, transactions
+        
+        # Additional metadata
+        category_mapping = data.groupby('itemDescription')['Category'].first()
+        
+        return {
+            'transaction_df': transaction_df, 
+            'unique_items': te.columns_,
+            'category_mapping': category_mapping
+        }
     except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return None, None, None
+        st.error(f"Data loading error: {e}")
+        return None
 
-# Enhanced rules generation with better parameters
 @st.cache_data
-def generate_rules(transaction_df):
+def generate_association_rules(transaction_df: pd.DataFrame):
     """
-    Generate association rules with more sophisticated parameters
+    Generate rules with category-aware parameters
     """
     try:
-        num_transactions = len(transaction_df)
-
-        # Apriori with more nuanced parameters
+        # Apriori Rules
         frequent_itemsets_apriori = apriori(
             transaction_df, 
-            min_support=0.05,  # Increased minimum support 
+            min_support=0.02,  # Adjusted for potentially smaller dataset
             use_colnames=True, 
-            low_memory=True, 
-            max_len=5  # Limit to more focused itemsets
+            max_len=3
         )
         
-        rules_apriori = association_rules(
+        apriori_rules = association_rules(
             frequent_itemsets_apriori, 
-            metric='lift',  # Added lift as primary metric
-            min_threshold=1.5,  # More stringent lift threshold
-            num_itemsets=num_transactions
+            metric='lift', 
+            min_threshold=1.2
         )
-
-        # FP-Growth with similar improvements
+        
+        # FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(
             transaction_df, 
-            min_support=0.05,  # Matching Apriori's support
+            min_support=0.02,
             use_colnames=True, 
-            max_len=5
+            max_len=3
         )
         
-        rules_fp = association_rules(
+        fp_rules = association_rules(
             frequent_itemsets_fp, 
-            metric='lift',
-            min_threshold=1.5,
-            num_itemsets=num_transactions
+            metric='lift', 
+            min_threshold=1.2
         )
-
-        return rules_apriori, rules_fp
+        
+        return apriori_rules, fp_rules
+    
     except Exception as e:
-        st.error(f"Error generating rules: {e}")
+        st.error(f"Rule generation error: {e}")
         return None, None
 
-def make_prediction(antecedent, rules, top_n=5):
+def smart_recommendations(
+    antecedent: set, 
+    rules: pd.DataFrame, 
+    category_mapping: pd.Series, 
+    top_n: int = 5
+) -> List[Dict[str, Any]]:
     """
-    Enhanced recommendation generation with more sophisticated matching
+    Enhanced recommendation system with category insights
     """
     try:
-        antecedent = frozenset(antecedent) if not isinstance(antecedent, frozenset) else antecedent
+        antecedent = frozenset(antecedent)
         
-        # More intelligent rule matching
+        # Intelligent rule matching
         matching_rules = rules[
-            rules['antecedents'].apply(
-                lambda x: x.issubset(antecedent) or 
-                len(x.intersection(antecedent)) > 0
-            )
+            rules['antecedents'].apply(lambda x: len(x.intersection(antecedent)) > 0)
         ]
         
         if matching_rules.empty:
             return []
         
-        # Prioritize rules with higher lift and confidence
-        top_rules = matching_rules.sort_values(
+        # Sort and select top recommendations
+        top_recommendations = matching_rules.sort_values(
             by=['lift', 'confidence'], 
             ascending=False
         ).head(top_n)
         
-        # More detailed recommendation formatting
-        formatted_predictions = []
+        recommendations = []
         for i, (consequent, lift, confidence, support) in enumerate(zip(
-            top_rules['consequents'], 
-            top_rules['lift'],
-            top_rules['confidence'],
-            top_rules['support']
+            top_recommendations['consequents'],
+            top_recommendations['lift'],
+            top_recommendations['confidence'],
+            top_recommendations['support']
         ), 1):
-            formatted_predictions.append({
+            product = list(consequent)[0]
+            recommendations.append({
                 'rank': i,
-                'product': ', '.join(list(consequent)),
+                'product': product,
+                'category': category_mapping.get(product, 'Unknown'),
                 'lift': f"{lift:.2f}",
                 'confidence': f"{confidence:.2%}",
                 'support': f"{support:.4f}"
             })
         
-        return formatted_predictions
+        return recommendations
+    
     except Exception as e:
-        st.error(f"Error in recommendation generation: {e}")
+        st.error(f"Recommendation error: {e}")
         return []
 
-def visualize_item_frequencies(transaction_df, top_n=20):
-    """
-    Enhanced item frequency visualization
-    """
-    item_frequencies = transaction_df.sum().sort_values(ascending=False).head(top_n)
-    
-    fig, ax = plt.subplots(figsize=(15, 7))
-    sns.barplot(x=item_frequencies.index, y=item_frequencies.values, palette='viridis')
-    plt.title(f"Top {top_n} Most Frequent Items in Grocery Dataset", fontsize=15)
-    plt.xlabel("Items", fontsize=12)
-    plt.ylabel("Frequency", fontsize=12)
-    plt.xticks(rotation=45, ha='right', fontsize=10)
-    plt.tight_layout()
-    
-    return fig
-
 def main():
-    st.title("🛒 Advanced Grocery Recommendation System")
+    st.title("🛒 Smart Grocery Recommendation System")
     
-    # Load data
-    transaction_df, unique_items, transactions = load_data()
+    # Load preprocessed data
+    data_dict = load_and_preprocess_data()
     
-    if transaction_df is None:
-        st.error("Failed to load data. Please check your connection.")
+    if not data_dict:
+        st.error("Data loading failed. Check connection.")
         return
+    
+    # Unpack data
+    transaction_df = data_dict['transaction_df']
+    unique_items = data_dict['unique_items']
+    category_mapping = data_dict['category_mapping']
     
     # Generate rules
-    rules_apriori, rules_fp = generate_rules(transaction_df)
+    apriori_rules, fp_rules = generate_association_rules(transaction_df)
     
-    if rules_apriori is None or rules_fp is None:
-        st.error("Failed to generate association rules.")
+    if apriori_rules is None or fp_rules is None:
+        st.error("Rule generation failed.")
         return
-
-    # Sidebar configuration
+    
+    # Sidebar Configuration
     st.sidebar.header("🔍 Recommendation Settings")
     
     algorithm = st.sidebar.selectbox(
-        "Select Recommendation Algorithm",
+        "Select Algorithm", 
         ["Apriori", "FP-Growth"]
     )
     
     selected_products = st.sidebar.multiselect(
-        "Select Products (Up to 3)", 
+        "Select Products (Max 3)", 
         sorted(unique_items), 
-        max_selections=3,
-        placeholder="Choose up to 3 products"
+        max_selections=3
     )
     
+    # Recommendation Generation
     if st.sidebar.button("Get Recommendations"):
         if not selected_products:
-            st.warning("Please select at least one product.")
+            st.warning("Select at least one product.")
             return
         
-        current_rules = rules_apriori if algorithm == "Apriori" else rules_fp
+        current_rules = apriori_rules if algorithm == "Apriori" else fp_rules
         
-        recommendations = make_prediction(set(selected_products), current_rules)
+        recommendations = smart_recommendations(
+            set(selected_products), 
+            current_rules, 
+            category_mapping
+        )
         
-        st.header(f"🏷️ Recommendations using {algorithm}")
+        st.header(f"🏷️ Recommendations ({algorithm})")
         
         if recommendations:
             rec_df = pd.DataFrame(recommendations)
             st.table(rec_df)
         else:
-            st.warning(f"No recommendations found for {', '.join(selected_products)}. Try different products.")
+            st.warning("No recommendations found.")
     
-    # Data Visualization Section
-    st.header("📊 Data Insights")
+    # Category Distribution Visualization
+    st.header("📊 Category Insights")
+    category_counts = category_mapping.value_counts()
     
-    st.subheader(f"Top 20 Most Frequent Items")
-    fig = visualize_item_frequencies(transaction_df)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    category_counts.plot(kind='pie', autopct='%1.1f%%', startangle=90)
+    plt.title("Product Category Distribution")
     st.pyplot(fig)
 
 if __name__ == "__main__":
