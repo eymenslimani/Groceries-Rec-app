@@ -23,18 +23,17 @@ def load_data():
         data = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
         
         # Basic preprocessing
-        data.dropna( inplace=True)
+        data.dropna(inplace=True)
 
         # Aggregate transactions by Member and Date
         transaction_data = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(list).reset_index()
-        #Dropping Unnecessary Columns: Member Number and Date
+        # Dropping Unnecessary Columns: Member Number and Date
         transaxtionData = transaction_data.drop(columns=['Member_number', 'Date'])
         transaxtionData.columns = ['itemDescription']
-        transaxtionData.columns = [None] * transaxtionData.shape[1]
-        transaxtionData.columns = range(transaxtionData.shape[1])
+       
         df = transaxtionData.drop(index=0).reset_index(drop=True)
-        #Splitting and Exploring Data
-        transactions = df[0].str.split(',')
+        # Splitting and Exploring Data
+        transactions = df['itemDescription'].tolist()
         
         # Encode transactions
         te = TransactionEncoder()
@@ -57,12 +56,12 @@ def generate_rules(transaction_df):
         num_transactions = len(transaction_df)
 
         # Generate Apriori Rules
-        frequent_itemsets_apriori = apriori(transaction_df, min_support=0.3, use_colnames=True, low_memory=True,max_len=10)
+        frequent_itemsets_apriori = apriori(transaction_df, min_support=0.3, use_colnames=True, low_memory=True, max_len=10)
         
         rules_apriori = association_rules(frequent_itemsets_apriori, metric='confidence', min_threshold=0.7)
 
         # Generate FP-Growth Rules
-        frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True,max_len=10)
+        frequent_itemsets_fp = fpgrowth(transaction_df, min_support=0.3, use_colnames=True, max_len=10)
          # Generate FP-Growth Rules
         rules_fp =  association_rules(frequent_itemsets_fp, metric='confidence', min_threshold=0.7)
         return rules_apriori, rules_fp
@@ -75,21 +74,19 @@ def make_prediction(antecedent, rules, top_n=5):
     Generate recommendations based on input items
     """
     try:
-        # Convert antecedent to a frozenset
-        def make_prediction(antecedent, rules, top_n=3):
-            matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent))]
-            top_rules = matching_rules.sort_values(by='lift', ascending=False).head(top_n)
-    
-            unique_predictions = set()
-            split_predictions = []
-    
-            for consequents in top_rules['consequents']:
-                for item in consequents:
-                    if item not in unique_predictions:
-                       unique_predictions.add(item)
-                       split_predictions.append(item)
-    
-            return split_predictions
+        matching_rules = rules[rules['antecedents'].apply(lambda x: x.issubset(antecedent))]
+        top_rules = matching_rules.sort_values(by='lift', ascending=False).head(top_n)
+
+        unique_predictions = set()
+        split_predictions = []
+
+        for consequents in top_rules['consequents']:
+            for item in consequents:
+                if item not in unique_predictions:
+                   unique_predictions.add(item)
+                   split_predictions.append(item)
+
+        return split_predictions
     except Exception as e:
         st.error(f"Error in recommendation generation: {e}")
         return []
@@ -175,7 +172,7 @@ def main():
         st.header(f"🏷️ Recommendations using {algorithm}")
         
         if recommendations:
-            rec_df = pd.DataFrame(recommendations)
+            rec_df = pd.DataFrame(recommendations, columns=['Recommendations'])
             st.table(rec_df)
         else:
             st.warning(f"No recommendations found for {', '.join(selected_products)}. Try different products.")
@@ -185,6 +182,7 @@ def main():
     
     # Item Frequencies
     st.subheader("Top 20 Most Frequent Items")
+    fig_frequencies = plt.figure()
     plot_item_frequency(transactions)
     st.pyplot(fig_frequencies)
     plt.close(fig_frequencies)
@@ -198,3 +196,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
