@@ -16,20 +16,20 @@ st.set_page_config(page_title="Grocery Recommendation App", page_icon="🛒", la
 @st.cache_data
 def load_data():
     """
-    Load and preprocess the grocery dataset with enhanced preprocessing
+    Load and preprocess the grocery dataset with robust preprocessing
     """
     try:
         # Load the dataset 
         data = pd.read_csv('https://raw.githubusercontent.com/eymenslimani/data/refs/heads/main/Groceries_dataset.csv')
         
-        # More robust preprocessing
-        data.dropna(inplace=True)
+        # Basic preprocessing
+        data.dropna(subset=['itemDescription'], inplace=True)
 
         # Aggregate transactions by Member and Date
-        transactionData = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(lambda x: list(set(x))).reset_index()
+        transaction_data = data.groupby(['Member_number', 'Date'])['itemDescription'].apply(list).reset_index()
         
-        # Prepare transactions for encoding
-        transactions = transactionData['itemDescription'].tolist()
+        # Prepare unique transactions
+        transactions = [list(set(trans)) for trans in transaction_data['itemDescription']]
 
         # Encode transactions
         te = TransactionEncoder()
@@ -41,31 +41,35 @@ def load_data():
         st.error(f"Error loading data: {e}")
         return None, None, None
 
-# Simplified rules generation
+# Simplified rules generation with error handling
 @st.cache_data
 def generate_rules(transaction_df):
     """
-    Generate association rules with lower thresholds
+    Generate association rules with refined parameters
     """
     try:
-        # Generate Apriori Rules with lower thresholds
+        # Total number of transactions
+        num_transactions = len(transaction_df)
+
+        # Generate Apriori Rules
         frequent_itemsets_apriori = apriori(
             transaction_df, 
-            min_support=0.02,  # Lowered support threshold
+            min_support=0.01,  # Adjusted support threshold
             use_colnames=True, 
-            max_len=3  # Limit to smaller itemsets
+            max_len=3  # Limit itemset length
         )
         
         rules_apriori = association_rules(
             frequent_itemsets_apriori, 
             metric='confidence',
-            min_threshold=0.3  # Lowered confidence threshold
+            min_threshold=0.2,  # Adjusted confidence threshold
+            num_itemsets=num_transactions
         )
 
         # Generate FP-Growth Rules
         frequent_itemsets_fp = fpgrowth(
             transaction_df, 
-            min_support=0.02,  
+            min_support=0.01,  
             use_colnames=True, 
             max_len=3
         )
@@ -73,7 +77,8 @@ def generate_rules(transaction_df):
         rules_fp = association_rules(
             frequent_itemsets_fp, 
             metric='confidence',
-            min_threshold=0.3
+            min_threshold=0.2,
+            num_itemsets=num_transactions
         )
 
         return rules_apriori, rules_fp
@@ -83,13 +88,13 @@ def generate_rules(transaction_df):
 
 def make_prediction(antecedent, rules, top_n=5):
     """
-    Simplified recommendation generation
+    Generate recommendations based on input items
     """
     try:
-        # Convert antecedent to a frozenset if it isn't already
+        # Convert antecedent to a frozenset
         antecedent = frozenset(antecedent) if not isinstance(antecedent, frozenset) else antecedent
         
-        # Find rules where at least some of the antecedent items are present
+        # Find matching rules
         matching_rules = rules[
             rules['antecedents'].apply(
                 lambda x: len(x.intersection(antecedent)) > 0
@@ -99,7 +104,7 @@ def make_prediction(antecedent, rules, top_n=5):
         if matching_rules.empty:
             return []
         
-        # Sort by confidence and lift
+        # Sort and select top recommendations
         top_rules = matching_rules.sort_values(
             by=['confidence', 'lift'], 
             ascending=False
@@ -128,11 +133,11 @@ def make_prediction(antecedent, rules, top_n=5):
 
 def visualize_item_frequencies(transaction_df, top_n=20):
     """
-    Enhanced item frequency visualization
+    Create item frequency visualization
     """
     item_frequencies = transaction_df.sum().sort_values(ascending=False).head(top_n)
     
-    fig, ax = plt.subplots(figsize=(15, 7))
+    plt.figure(figsize=(15, 7))
     sns.barplot(x=item_frequencies.index, y=item_frequencies.values, palette='viridis')
     plt.title(f"Top {top_n} Most Frequent Items", fontsize=15)
     plt.xlabel("Items", fontsize=12)
@@ -140,7 +145,7 @@ def visualize_item_frequencies(transaction_df, top_n=20):
     plt.xticks(rotation=45, ha='right', fontsize=10)
     plt.tight_layout()
     
-    return fig
+    return plt.gcf()
 
 def visualize_top_rules(rules, top_n=10):
     """
@@ -154,7 +159,7 @@ def visualize_top_rules(rules, top_n=10):
             for consequent in rule['consequents']:
                 G.add_edge(antecedent, consequent, weight=rule['lift'])
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    plt.figure(figsize=(12, 8))
     pos = nx.spring_layout(G, k=0.5, seed=42)
     
     edges = G.edges(data=True)
@@ -163,10 +168,10 @@ def visualize_top_rules(rules, top_n=10):
     nx.draw(G, pos, with_labels=True, node_color='lightblue', 
             font_size=8, node_size=1500, 
             edge_color=weights, edge_cmap=plt.cm.viridis, 
-            width=2, ax=ax)
+            width=2)
     
     plt.title("Association Rules Network", fontsize=15)
-    return fig
+    return plt.gcf()
 
 def main():
     st.title("🛒 Grocery Recommendation System")
@@ -224,12 +229,14 @@ def main():
     st.subheader("Top 20 Most Frequent Items")
     fig_frequencies = visualize_item_frequencies(transaction_df)
     st.pyplot(fig_frequencies)
+    plt.close(fig_frequencies)
     
     # Rules Visualization
     st.subheader("Top Association Rules Network")
     current_rules = rules_apriori  # You can toggle between apriori and fp-growth
     fig_rules = visualize_top_rules(current_rules)
     st.pyplot(fig_rules)
+    plt.close(fig_rules)
 
 if __name__ == "__main__":
     main()
